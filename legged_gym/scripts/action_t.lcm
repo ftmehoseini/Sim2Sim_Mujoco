@@ -1,0 +1,7 @@
+package obslcm;
+
+struct action_t
+{
+	double tau[12];
+}
+	

@@ -1,0 +1,10 @@
+package obslcm;
+
+struct observ_t
+{
+    double q[12];
+    double qdot[12];
+    double orientation[6];
+    double pre_action[12];
+    double cmd_vel[6];
+}

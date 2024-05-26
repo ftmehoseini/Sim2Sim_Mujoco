@@ -114,7 +114,7 @@ def get_load_path(root, load_run=-1, checkpoint=-1):
     if load_run==-1:
         load_run = last_run
     elif load_run == -2: # run best policy
-        load_run = "/home/lenovo/sim2sim_leggedgym/logs/rough_iust/"
+        load_run = "/home/lenovo/sim_leggedgym/sim2sim_leggedgym/logs/rough_iust/"
     else:
         load_run = os.path.join(root, load_run)
 

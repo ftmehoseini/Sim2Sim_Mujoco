@@ -32,11 +32,11 @@ from .base_config import BaseConfig
 
 class LeggedRobotCfg(BaseConfig):
     class env:
-        frame_stack = 15
-        c_frame_stack = 3
+        frame_stack = 15 #15
+        c_frame_stack = 3 #3
         num_single_obs = 48
         num_observations = int(frame_stack * num_single_obs) # 48*15 = 720
-        single_num_privileged_obs = 71 
+        single_num_privileged_obs = 77 #70
         num_privileged_obs = int(c_frame_stack * single_num_privileged_obs) # 3*71 = 213
         num_actions = 12
         num_envs = 1 
@@ -126,9 +126,9 @@ class LeggedRobotCfg(BaseConfig):
 
     class domain_rand:
         randomize_friction = True
-        friction_range = [0.1, 2.0]
-        randomize_base_mass = True
-        added_mass_range = [-2., 2.]
+        friction_range = [0.5, 1.25]
+        randomize_base_mass = False
+        added_mass_range = [-1., 1.]
         push_robots = True
         push_interval_s = 15
         max_push_vel_xy = 1.
@@ -171,18 +171,18 @@ class LeggedRobotCfg(BaseConfig):
             height_measurements = 5.0
             quat = 1.0
         clip_observations = 100.
-        clip_actions = 100.
+        clip_actions = 100. 
 
     class noise:
         add_noise = False
         noise_level = 0.6 # scales other values # 1.0
 
         class noise_scales:
-            dof_pos = 0.05
-            dof_vel = 0.5
-            lin_vel = 0.5
-            ang_vel = 0.2
-            gravity = 0.05
+            dof_pos = 0.01 # 0.05
+            dof_vel = 1.5 # 0.5
+            lin_vel = 0.1 # 0.5
+            ang_vel = 0.2 # 0.2
+            gravity = 0.05 # 0.05
             quat = 0.03
             height_measurements = 0.1
 
@@ -234,7 +234,7 @@ class LeggedRobotCfgPPO(BaseConfig):
         entropy_coef = 0.01
         num_learning_epochs = 5
         num_mini_batches = 4 # mini batch size = num_envs*nsteps / nminibatches
-        learning_rate = 1.e-5 #5.e-4
+        learning_rate = 2.e-4 #5.e-4
         schedule = 'fixed' # could be adaptive, fixed ### was adaptive
         gamma = 0.99
         lam = 0.95

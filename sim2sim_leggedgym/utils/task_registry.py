@@ -105,7 +105,7 @@ class TaskRegistry():
                             physics_engine=args.physics_engine,
                             sim_device=args.sim_device,
                             headless=args.headless)
-        print('*env:',env)
+        # print('*env:',env)
         return env, env_cfg
 
     def make_alg_runner(self, env, name=None, args=None, train_cfg=None, log_root="default") -> Tuple[OnPolicyRunner, LeggedRobotCfgPPO]:

@@ -39,6 +39,7 @@ from envs import LeggedRobot
 
 from utils.terrain import  IUSTTerrain
 import numpy as np
+import time
 # from collections import deque
 
 
@@ -78,10 +79,13 @@ class IUSTFreeEnv(LeggedRobot):
     '''
     def __init__(self, cfg: LeggedRobotCfg, sim_params, physics_engine, sim_device, headless):
         super().__init__(cfg, sim_params, physics_engine, sim_device, headless)
+        global sensors
         self.last_feet_z = 0.05
         self.feet_height = torch.zeros((self.num_envs, 2), device=self.device)
         self.reset_idx(torch.tensor(range(self.num_envs), device=self.device))
+        # sensors = self._create_envs()
         self.compute_observations()
+
 
     def _push_robots(self):
         """ Random pushes the robots. Emulates an impulse by setting a randomized base velocity. 
@@ -90,64 +94,20 @@ class IUSTFreeEnv(LeggedRobot):
         max_push_angular = self.cfg.domain_rand.max_push_ang_vel
         self.rand_push_force[:, :2] = torch_rand_float(
             -max_vel, max_vel, (self.num_envs, 2), device=self.device)  # lin vel x/y
+        print('push force:', self.rand_push_force)
         self.root_states[:, 7:9] = self.rand_push_force[:, :2]
 
         self.rand_push_torque = torch_rand_float(
             -max_push_angular, max_push_angular, (self.num_envs, 3), device=self.device)
+        print('push torque:', self.rand_push_torque)
+        print('----------------------------------------------------')
 
         self.root_states[:, 10:13] = self.rand_push_torque
+        # print('root state:',self.root_states )
 
         self.gym.set_actor_root_state_tensor(
             self.sim, gymtorch.unwrap_tensor(self.root_states))
-
-    def  _get_phase(self):
-        cycle_time = 0.64 
-        phase = self.episode_length_buf * self.dt / cycle_time
-        return phase
-
-    def _get_gait_phase(self):
-        # return float mask 1 is stance, 0 is swing
-        phase = self._get_phase()
-        sin_pos = torch.sin(2 * torch.pi * phase)
-        # Add double support phase
-        stance_mask = torch.zeros((self.num_envs, 2), device=self.device)
-        # left foots stance
-        stance_mask[:, 0] = sin_pos >= 0
-        # stance_mask[:, 2] = sin_pos >= 0 # added
-        # right foots stance
-        stance_mask[:, 1] = sin_pos < 0
-        # stance_mask[:, 3] = sin_pos < 0 # added
-        # Double support phase
-        stance_mask[torch.abs(sin_pos) < 0.1] = 1
-
-        # print('stance_mask:', stance_mask)
-        return stance_mask
-    
-
-    def compute_ref_state(self):
-        phase = self._get_phase()
-        sin_pos = torch.sin(2 * torch.pi * phase)
-        sin_pos_l = sin_pos.clone()
-        sin_pos_r = sin_pos.clone()
-        self.ref_dof_pos = torch.zeros_like(self.dof_pos)
-        scale_1 = 0.17 # target_joint_pos_scale = 0.17 
-        scale_2 = 2 * scale_1
-        # left foot stance phase set to default joint pos
-        sin_pos_l[sin_pos_l > 0] = 0
-        self.ref_dof_pos[:, 2] = sin_pos_l * scale_1
-        self.ref_dof_pos[:, 3] = sin_pos_l * scale_2
-        self.ref_dof_pos[:, 4] = sin_pos_l * scale_1
-        # right foot stance phase set to default joint pos
-        sin_pos_r[sin_pos_r < 0] = 0
-        self.ref_dof_pos[:, 8] = sin_pos_r * scale_1
-        self.ref_dof_pos[:, 9] = sin_pos_r * scale_2
-        self.ref_dof_pos[:, 10] = sin_pos_r * scale_1
-        # Double support phase
-        self.ref_dof_pos[torch.abs(sin_pos) < 0.1] = 0
-
-        self.ref_action = 2 * self.ref_dof_pos
-
-
+        
     def create_sim(self):
         """ Creates simulation, terrain and evironments
         """
@@ -168,6 +128,49 @@ class IUSTFreeEnv(LeggedRobot):
                 "Terrain mesh type not recognised. Allowed types are [None, plane, heightfield, trimesh]")
         self._create_envs()
 
+    def  _get_phase(self):
+        cycle_time = 0.64 
+        phase = self.episode_length_buf * self.dt / cycle_time
+        return phase
+
+    def _get_gait_phase(self):
+        # return float mask 1 is stance, 0 is swing
+        phase = self._get_phase()
+        sin_pos = torch.sin(2 * torch.pi * phase)
+        # Add double support phase
+        stance_mask = torch.zeros((self.num_envs, 2), device=self.device)
+        # left foots stance
+        stance_mask[:, 0] = sin_pos >= 0
+        # stance_mask[:, 2] = sin_pos >= 0 # added
+        # right foots stance
+        stance_mask[:, 1] = sin_pos < 0
+        # stance_mask[:, 3] = sin_pos < 0 # added
+        # Double support phase
+        stance_mask[torch.abs(sin_pos) < 0.1] = 1
+        # print('stance_mask:', stance_mask)
+        return stance_mask
+    
+    # def compute_ref_state(self):
+    #     phase = self._get_phase()
+    #     sin_pos = torch.sin(2 * torch.pi * phase)
+    #     sin_pos_l = sin_pos.clone()
+    #     sin_pos_r = sin_pos.clone()
+    #     self.ref_dof_pos = torch.zeros_like(self.dof_pos)
+    #     scale_1 = 0.17 # target_joint_pos_scale = 0.17 
+    #     scale_2 = 2 * scale_1
+    #     # left foot stance phase set to default joint pos
+    #     sin_pos_l[sin_pos_l > 0] = 0
+    #     self.ref_dof_pos[:, 2] = sin_pos_l * scale_1
+    #     self.ref_dof_pos[:, 3] = sin_pos_l * scale_2
+    #     self.ref_dof_pos[:, 4] = sin_pos_l * scale_1
+    #     # right foot stance phase set to default joint pos
+    #     sin_pos_r[sin_pos_r < 0] = 0
+    #     self.ref_dof_pos[:, 8] = sin_pos_r * scale_1
+    #     self.ref_dof_pos[:, 9] = sin_pos_r * scale_2
+    #     self.ref_dof_pos[:, 10] = sin_pos_r * scale_1
+    #     # Double support phase
+    #     self.ref_dof_pos[torch.abs(sin_pos) < 0.1] = 0
+    #     self.ref_action = 2 * self.ref_dof_pos
 
     def _get_noise_scale_vec(self, cfg):
         """ Sets a vector used to scale the noise added to the observations.
@@ -195,62 +198,69 @@ class IUSTFreeEnv(LeggedRobot):
         return noise_vec
 
 
-    def step(self, actions):
-        if self.cfg.env.use_ref_actions:
-            actions += self.ref_action
-        # dynamic randomization
-        delay = torch.rand((self.num_envs, 1), device=self.device)
-        actions = (1 - delay) * actions + delay * self.actions
-        actions += self.cfg.domain_rand.dynamic_randomization * torch.randn_like(actions) * actions
-        return super().step(actions)
-
+    # def step(self, actions):
+    #     if self.cfg.env.use_ref_actions:
+    #         actions += self.ref_action
+    #     # dynamic randomization
+    #     delay = torch.rand((self.num_envs, 1), device=self.device)
+    #     actions = (1 - delay) * actions + delay * self.actions
+    #     actions += self.cfg.domain_rand.dynamic_randomization * torch.randn_like(actions) * actions
+    #     return super().step(actions)
+    
 
     def compute_observations(self):
+        contact_force = self.contact_forces[:, self.feet_indices, 2] > 5.
+        # print(contact_force)
+        # print('contact force:', self.contact_forces) # [1,17,3]
+        # print('------------------')
+        contact_state = [0,0,0,0]
+        for i in range(4):
+            if contact_force[0][i] == True:
+                contact_state [i] = 1
+        foot_contact_state = torch.Tensor([contact_state])
 
-        phase = self._get_phase()
-        self.compute_ref_state()
+        # print('sensors',sensors)
+        # sensor_data = self.sensors.get_forces()
+        forces = self.forces 
+        print('force:',forces)
+        # sensor_data = self.sensors
+        # print(sensor_data)   # force as Vec3
+        # print(sensor_data.torque)  # torque as Vec3
 
-        sin_pos = torch.sin(2 * torch.pi * phase).unsqueeze(1)
-        cos_pos = torch.cos(2 * torch.pi * phase).unsqueeze(1)
 
-        stance_mask = self._get_gait_phase()
-        contact_mask = self.contact_forces[:, self.feet_indices, 2] > 5.
-
-        self.command_input = torch.cat(
-            (sin_pos, cos_pos, self.commands[:, :3] * self.commands_scale), dim=1)
-        
-        q = (self.dof_pos - self.default_dof_pos) * self.obs_scales.dof_pos
-        dq = self.dof_vel * self.obs_scales.dof_vel
-       
-        diff = self.dof_pos - self.ref_dof_pos
-
-        self.privileged_obs_buf = torch.cat((
-            self.command_input,  # 2 + 3
-            (self.dof_pos - self.default_joint_pd_target) * \
-            self.obs_scales.dof_pos,  # 12
+        self.privileged_obs_buf = torch.cat(( # 71 * (3)
+            # self.command_input,  # 2 + 3
+            # (self.dof_pos - self.default_joint_pd_target) * \
+            # self.obs_scales.dof_pos,  # 12
             self.dof_vel * self.obs_scales.dof_vel,  # 12
             self.actions,  # 12
-            diff,  # 12
-            self.rand_push_torque,  # 3
-            self.base_lin_vel * self.obs_scales.lin_vel,  # 3
-            self.base_ang_vel * self.obs_scales.ang_vel,  # 3
-            self.base_euler_xyz * self.obs_scales.quat,  # 3
-            self.env_frictions,  # 1
-            self.body_mass / 30.,  # 1
-            #stance_mask,  # 2
-            contact_mask,  # 2
-        ), dim=-1)
-        # self.rand_push_force[:, :2],  # 3
+            # diff,  # 12
+            # self.rand_push_force[:, :2],  # 3
             # self.rand_push_torque,  # 3
+            self.base_lin_vel * self.obs_scales.lin_vel,  # 3qs
+            self.base_ang_vel * self.obs_scales.ang_vel,  # 3
+            # self.base_euler_xyz * self.obs_scales.quat,  # 3
+            # self.env_frictions * 4,  # 1 * 4
+            # contact_force, # 4
+            # foot_contact_state, # 4
+ 
+            self.projected_gravity,
+            self.commands[:, :3] * self.commands_scale,
+            (self.dof_pos - self.default_dof_pos) * self.obs_scales.dof_pos
+        ), dim=-1) 
+        # print('shape of privileged', np.shape(self.privileged_obs_buf))
 
-        obs_buf = torch.cat((  self.base_lin_vel * self.obs_scales.lin_vel,
-                                    self.base_ang_vel  * self.obs_scales.ang_vel,
-                                    self.projected_gravity,
-                                    self.commands[:, :3] * self.commands_scale,
-                                    (self.dof_pos - self.default_dof_pos) * self.obs_scales.dof_pos,
-                                    self.dof_vel * self.obs_scales.dof_vel,
-                                    self.actions
-                                    ),dim=-1)
+
+        obs_buf = torch.cat((  # 48 * (15)
+            self.base_lin_vel * self.obs_scales.lin_vel,
+            self.base_ang_vel  * self.obs_scales.ang_vel,
+            self.projected_gravity,
+            self.commands[:, :3] * self.commands_scale,
+            (self.dof_pos - self.default_dof_pos) * self.obs_scales.dof_pos,
+            self.dof_vel * self.obs_scales.dof_vel,
+            self.actions
+        ),dim=-1)
+        # print('shape of obs', np.shape(self.obs_buf))
 
         if self.cfg.terrain.measure_heights:
             heights = torch.clip(self.root_states[:, 2].unsqueeze(1) - 0.5 - self.measured_heights, -1, 1.) * self.obs_scales.height_measurements

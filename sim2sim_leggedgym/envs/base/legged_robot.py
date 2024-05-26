@@ -223,7 +223,10 @@ class LeggedRobot(BaseTask):
         self.rew_buf[:] = 0.
         for i in range(len(self.reward_functions)):
             name = self.reward_names[i]
+            # print('reward',name)
             rew = self.reward_functions[i]() * self.reward_scales[name]
+            # print(rew)
+            # print('---------------------------------------')
             self.rew_buf += rew
             self.episode_sums[name] += rew
         if self.cfg.rewards.only_positive_rewards:
@@ -708,20 +711,29 @@ class LeggedRobot(BaseTask):
         self.num_bodies = self.gym.get_asset_rigid_body_count(robot_asset)
         dof_props_asset = self.gym.get_asset_dof_properties(robot_asset)
         rigid_shape_props_asset = self.gym.get_asset_rigid_shape_properties(robot_asset)
+        #-----------------------------------------------------------------------------------
+        # force_sensor = gymapi.ForceSensorProperties()
+        # force_sensor.enable_constraint_solver_forces = True
+        # force_sensor.enable_forward_dynamics_forces = True
+        # force_sensor.use_world_frame = False
+
 
         # save body names from the asset
-        body_names = self.gym.get_asset_rigid_body_names(robot_asset)
-        self.dof_names = self.gym.get_asset_dof_names(robot_asset)
-        self.num_bodies = len(body_names)
-        self.num_dofs = len(self.dof_names)
+        body_names = self.gym.get_asset_rigid_body_names(robot_asset) 
+        # body names: ['base', 'FL_hip', 'FL_thigh', 'FL_calf', 'FL_foot', 'FR_hip', 'FR_thigh', 'FR_calf', 'FR_foot', 'RL_hip', 'RL_thigh', 'RL_calf', 'RL_foot', 'RR_hip', 'RR_thigh', 'RR_calf', 'RR_foot']
+        self.dof_names = self.gym.get_asset_dof_names(robot_asset) 
+        # dof names:['FL_hip_joint', 'FL_thigh_joint', 'FL_calf_joint', 'FR_hip_joint', 'FR_thigh_joint', 'FR_calf_joint', 'RL_hip_joint', 'RL_thigh_joint', 'RL_calf_joint', 'RR_hip_joint', 'RR_thigh_joint', 'RR_calf_joint']
+        self.num_bodies = len(body_names) # 17
+        self.num_dofs = len(self.dof_names) # 12
         feet_names = [s for s in body_names if self.cfg.asset.foot_name in s]
+        # feet names: ['FL_foot', 'FR_foot', 'RL_foot', 'RR_foot']
         penalized_contact_names = []
         for name in self.cfg.asset.penalize_contacts_on:
             penalized_contact_names.extend([s for s in body_names if name in s])
-        termination_contact_names = []
+        # ['FL_thigh', 'FR_thigh', 'RL_thigh', 'RR_thigh', 'FL_calf', 'FR_calf', 'RL_calf', 'RR_calf']
+        termination_contact_names = [] # ['base']
         for name in self.cfg.asset.terminate_after_contacts_on:
             termination_contact_names.extend([s for s in body_names if name in s])
-
         base_init_state_list = self.cfg.init_state.pos + self.cfg.init_state.rot + self.cfg.init_state.lin_vel + self.cfg.init_state.ang_vel
         self.base_init_state = to_torch(base_init_state_list, device=self.device, requires_grad=False)
         start_pose = gymapi.Transform()
@@ -734,6 +746,15 @@ class LeggedRobot(BaseTask):
         self.envs = []
         self.env_frictions = torch.zeros(self.num_envs, 1, dtype=torch.float32, device=self.device)
         self.body_mass = torch.zeros(self.num_envs, 1, dtype=torch.float32, device=self.device, requires_grad=False)
+        self.sensors = [] # added
+
+        # body_idx = self.gym.find_asset_rigid_body_index(robot_asset, 'FL_calf') # rigid body force sensors # added
+        # sensor_pose = gymapi.Transform(gymapi.Vec3(0.0, 0.0, 0.0)) 
+        # sensor_props = gymapi.ForceSensorProperties()
+        # sensor_props.enable_forward_dynamics_forces = True
+        # sensor_props.enable_constraint_solver_forces = True
+        # sensor_props.use_world_frame = False
+        # self.gym.create_asset_force_sensor(robot_asset, body_idx, sensor_pose, sensor_props)
 
         for i in range(self.num_envs):
             # create env instance
@@ -741,7 +762,7 @@ class LeggedRobot(BaseTask):
             pos = self.env_origins[i].clone()
             pos[:2] += torch_rand_float(-1., 1., (2,1), device=self.device).squeeze(1)
             start_pose.p = gymapi.Vec3(*pos)
-                
+            
             rigid_shape_props = self._process_rigid_shape_props(rigid_shape_props_asset, i)
             self.gym.set_asset_rigid_shape_properties(robot_asset, rigid_shape_props)
             actor_handle = self.gym.create_actor(env_handle, robot_asset, start_pose, self.cfg.asset.name, i, self.cfg.asset.self_collisions, 0)
@@ -750,9 +771,11 @@ class LeggedRobot(BaseTask):
             body_props = self.gym.get_actor_rigid_body_properties(env_handle, actor_handle)
             body_props = self._process_rigid_body_props(body_props, i)
             self.gym.set_actor_rigid_body_properties(env_handle, actor_handle, body_props, recomputeInertia=True)
+            # num_sensors = self.gym.get_actor_force_sensor_count(env_handle, actor_handle)
             self.envs.append(env_handle)
             self.actor_handles.append(actor_handle)
-
+        
+        
         self.feet_indices = torch.zeros(len(feet_names), dtype=torch.long, device=self.device, requires_grad=False)
         for i in range(len(feet_names)):
             self.feet_indices[i] = self.gym.find_actor_rigid_body_handle(self.envs[0], self.actor_handles[0], feet_names[i])
@@ -764,6 +787,20 @@ class LeggedRobot(BaseTask):
         self.termination_contact_indices = torch.zeros(len(termination_contact_names), dtype=torch.long, device=self.device, requires_grad=False)
         for i in range(len(termination_contact_names)):
             self.termination_contact_indices[i] = self.gym.find_actor_rigid_body_handle(self.envs[0], self.actor_handles[0], termination_contact_names[i])
+
+
+        # for env, actor_handle in zip(self.envs, self.actor_handles): 
+        #     num_sensors = self.gym.get_actor_force_sensor_count(env, actor_handle)
+
+        #     for i in range(num_sensors):
+        #         sensor = self.gym.get_actor_force_sensor(env, actor_handle, i)
+        #         self.sensors.append(sensor)
+        #         print('force_sensor:', self.sensors)
+                            
+        # self.gym.enable_actor_dof_force_sensors(self.envs[0], self.actor_handles[0])
+        # self.forces = self.gym.get_actor_dof_forces(self.envs[0], self.actor_handles[0])
+        # print('force', self.forces)
+        # print('num sensor:', num_sensors)
 
     def _get_env_origins(self):
         """ Sets environment origins. On rough terrain the origins are defined by the terrain platforms.
